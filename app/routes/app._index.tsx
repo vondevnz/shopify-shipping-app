@@ -4,15 +4,43 @@ import type {
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { admin } = await authenticate.admin(request);
 
-  return null;
+  const response = await admin.graphql(
+  `#graphql
+    query ProductWeight {
+      products(first: 10) {
+        nodes {
+          title
+          id
+          variants (first: 10) {
+            nodes {
+              title
+              id
+              inventoryItem {
+                measurement {
+                  weight {
+                    value
+                    unit
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `
+  )
+  const responseJson = await response.json();
+
+  return { products: responseJson.data?.products.nodes ?? [] };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -129,6 +157,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
+  const { products } = useLoaderData<typeof loader>();
 
   const shopify = useAppBridge();
   const isLoading =
@@ -148,6 +177,29 @@ export default function Index() {
       <s-button slot="primary-action" onClick={generateProduct}>
         Generate a product
       </s-button>
+
+      <s-section heading="products">
+
+        <ul>
+          {products.map((items) => (
+            <li key={items.id}>
+              {items.title}
+              <ul>
+                {items.variants.nodes.map((variants) => {
+                    const weight = variants.inventoryItem?.measurement?.weight; 
+
+                    return (
+                      <li key={variants.id}>
+                        {variants.title}: { weight ? `${weight.value} ${weight.unit}` : "No weight" }
+                      </li>
+                    );
+                  }
+                )}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </s-section>
 
       <s-section heading="Congrats on creating a new Shopify app 🎉">
         <s-paragraph>
@@ -346,6 +398,8 @@ export default function Index() {
     </s-page>
   );
 }
+
+
 
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
