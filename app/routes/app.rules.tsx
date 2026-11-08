@@ -120,10 +120,14 @@ export default function Rules() {
               ))}
             </select>
           </label>
+          {actionData?.errors?.country && <p>{actionData.errors.country}</p>}
+
           <label>
             Price
             <input name="price" type="number" step="0.01" min="0"/>
           </label>
+          {actionData?.errors?.price && <p>{actionData.errors.price}</p>}
+
           <label>
             Currency
             <select name="currency">
@@ -134,14 +138,20 @@ export default function Rules() {
               ))}
             </select>
           </label>
+          {actionData?.errors?.currency && <p>{actionData.errors.currency}</p>}
+
           <label>
             Minimum Weight (g)
             <input name="minWeightGrams" type="number" min="0"/>
           </label>
+          {actionData?.errors?.minWeightGrams && <p>{actionData.errors.minWeightGrams}</p>}
+
           <label>
             Maximum Weight (g)
             <input name="maxWeightGrams" type="number" min="0"/>
           </label>
+           {actionData?.errors?.maxWeightGrams && <p>{actionData.errors.maxWeightGrams}</p>}
+           
           <button type="submit">Add rule</button>
         </Form>
       </s-section>
