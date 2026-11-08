@@ -5,12 +5,13 @@ import {
   Form,
   useLoaderData,
   useActionData,
+  useNavigate,
 } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
-import { COUNTRIES } from "../countries";
-import { CURRENCIES } from "../currencies";
+import { validateRule } from "app/models/shippingRule";
+import { RuleFields } from "app/components/RuleFields";
 
 // LOADER
 export const loader = async ({ request }: LoaderFunctionArgs) => {
@@ -66,55 +67,19 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 export default function Rules() {
   const { shippingRules } = useLoaderData<typeof loader>();
   const actionData = useActionData<typeof action>();
+  const navigate = useNavigate();
 
   return (
     <s-page>
-      <s-section heading="Shipping rules">
+      <s-section heading="Add a rule">
         <Form method="post">
           <input type="hidden" name="intent" value="create" />
-          <label>
-            Country
-            <select name="country">
-              {COUNTRIES.map(( country ) => (
-                <option key={country.code} value={country.code}>
-                  {country.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {actionData?.errors?.country && <p>{actionData.errors.country}</p>}
-
-          <label>
-            Price
-            <input name="price" type="number" step="0.01" min="0"/>
-          </label>
-          {actionData?.errors?.price && <p>{actionData.errors.price}</p>}
-
-          <label>
-            Currency
-            <select name="currency">
-              {CURRENCIES.map(( currency ) => (
-                <option key={currency} value={currency}>
-                  {currency}
-                </option>
-              ))}
-            </select>
-          </label>
-          {actionData?.errors?.currency && <p>{actionData.errors.currency}</p>}
-
-          <label>
-            Minimum Weight (g)
-            <input name="minWeightGrams" type="number" min="0"/>
-          </label>
-          {actionData?.errors?.minWeightGrams && <p>{actionData.errors.minWeightGrams}</p>}
-
-          <label>
-            Maximum Weight (g)
-            <input name="maxWeightGrams" type="number" min="0"/>
-          </label>
-           {actionData?.errors?.maxWeightGrams && <p>{actionData.errors.maxWeightGrams}</p>}
-
-          <button type="submit">Add rule</button>
+          <s-stack gap="base">
+            <RuleFields errors={actionData?.errors} />
+            <s-stack direction="inline">
+              <s-button type="submit" variant="primary">Add rule</s-button>
+            </s-stack>
+          </s-stack>
         </Form>
       </s-section>
 
@@ -137,11 +102,14 @@ export default function Rules() {
                 <s-table-cell>{rule.minWeightGrams}</s-table-cell>
                 <s-table-cell>{rule.maxWeightGrams}</s-table-cell>
                 <s-table-cell>
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="delete" />
-                    <input type="hidden" name="id" value={rule.id} />
-                    <button type="submit">Delete</button>
-                  </Form>
+                  <s-stack direction="inline" gap="small">
+                    <s-button onClick={() => navigate(`/app/rules/${rule.id}`)}>Edit</s-button>
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="delete" />
+                      <input type="hidden" name="id" value={rule.id} />
+                      <s-button type="submit" tone="critical">Delete</s-button>
+                    </Form>
+                  </s-stack>
                 </s-table-cell>
               </s-table-row>
             ))}
@@ -156,46 +124,3 @@ export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
 
-function validateRule(formData: FormData) {
-  const formCountry = formData.get("country");
-  const formMinWeightGrams = formData.get("minWeightGrams")
-  const formMaxWeightGrams = formData.get("maxWeightGrams")
-  const formPrice = formData.get("price");
-  const formCurrency = formData.get("currency");
-
-    // CONVERT TO CORRECT TYPES
-  const country = String(formCountry);
-  const price = Math.round(Number(formPrice) * 100);
-  const minWeightGrams = Number(formMinWeightGrams);
-  const maxWeightGrams = Number(formMaxWeightGrams);
-  const currency = String(formCurrency);
-
-  // VALIDATION CHECK
-  const errors: Record<string, string> = {};
-
-  const isValidCountry = COUNTRIES.some((c) => c.code === country);
-  if (!isValidCountry) {
-    errors.country = "Choose a country from the list";
-  }
-
-  if (!formMinWeightGrams || !Number.isInteger(minWeightGrams) || minWeightGrams < 0) {
-    errors.minWeightGrams = "Enter a whole number of grams, 0 or more";
-  }
-
-  if (!formMaxWeightGrams || !Number.isInteger(maxWeightGrams) || maxWeightGrams <= minWeightGrams) {
-    errors.maxWeightGrams = "Enter a whole number of grams, greater than min value";
-  }
-
-  if (!formPrice || !Number.isInteger(price) || price < 0) {
-    errors.price = "Enter a price, 0 or more";
-  }
-
-  if (!formCurrency || !CURRENCIES.includes(currency)) {
-    errors.currency = "Choose a currency from the list";
-  }
-
-  return {
-    errors,
-    data: { country, minWeightGrams, maxWeightGrams, price, currency },
-  };
-}
