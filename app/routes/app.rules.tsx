@@ -6,6 +6,7 @@ import {
   useLoaderData,
   useActionData,
 } from "react-router";
+import { boundary } from "@shopify/shopify-app-react-router/server";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
 import { COUNTRIES } from "../countries";
@@ -44,61 +45,21 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 // ACTION
 export const action = async ({ request }: ActionFunctionArgs) => {
   const { session } = await authenticate.admin(request);
-
   const formData = await request.formData();
+  const intent = formData.get("intent");
 
-  const formCountry = formData.get("country");
-  const formMinWeightGrams = formData.get("minWeightGrams")
-  const formMaxWeightGrams = formData.get("maxWeightGrams")
-  const formPrice = formData.get("price");
-  const formCurrency = formData.get("currency");
-
-    // CONVERT TO CORRECT TYPES
-  const country = String(formCountry);
-  const price = Math.round(Number(formPrice) * 100);
-  const minWeightGrams = Number(formMinWeightGrams);
-  const maxWeightGrams = Number(formMaxWeightGrams);
-  const currency = String(formCurrency);
-
-  // VALIDATION CHECK
-  const errors: Record<string, string> = {};
-
-  const isValidCountry = COUNTRIES.some((c) => c.code === country);
-  if (!isValidCountry) {
-    errors.country = "Choose a country from the list";
+  if (intent === "delete") {
+    const id = String(formData.get("id"));
+    await db.shippingRule.deleteMany({ where: { id, shop: session.shop } });
+    return { ok: true };
   }
 
-  if (!formMinWeightGrams || !Number.isInteger(minWeightGrams) || minWeightGrams < 0) {
-    errors.minWeightGrams = "Enter a whole number of grams, 0 or more";
-  }
+  const { errors, data } = validateRule(formData);
+  if (Object.keys(errors).length > 0) return { errors };
 
-  if (!formMaxWeightGrams || !Number.isInteger(maxWeightGrams) || maxWeightGrams <= minWeightGrams) {
-    errors.maxWeightGrams = "Enter a whole number of grams, greater than min value";
-  }
-
-  if (!formPrice || !Number.isInteger(price) || price < 0) {
-    errors.price = "Enter a price, 0 or more";
-  }
-
-  if (!formCurrency || !CURRENCIES.includes(currency)) {
-    errors.currency = "Choose a currency from the list";
-  }
-
-  if (Object.keys(errors).length > 0) {
-    return { errors };
-  }
-
-  // ADD TO DATABASE
-  await db.shippingRule.create({ data: {
-    country,
-    minWeightGrams,
-    maxWeightGrams,
-    price,
-    currency,
-    shop: session.shop
-  }})
-
+  await db.shippingRule.create({ data: { ...data, shop: session.shop } });
   return { ok: true };
+
 }
 
 // FORM Component
@@ -110,6 +71,7 @@ export default function Rules() {
     <s-page>
       <s-section heading="Shipping rules">
         <Form method="post">
+          <input type="hidden" name="intent" value="create" />
           <label>
             Country
             <select name="country">
@@ -151,35 +113,89 @@ export default function Rules() {
             <input name="maxWeightGrams" type="number" min="0"/>
           </label>
            {actionData?.errors?.maxWeightGrams && <p>{actionData.errors.maxWeightGrams}</p>}
-           
+
           <button type="submit">Add rule</button>
         </Form>
       </s-section>
 
       <s-section heading="Rules">
-        <s-paragraph>
-            <s-table>
-              <s-table-header-row>
-                <s-table-header>Country</s-table-header>
-                <s-table-header>Currency</s-table-header>
-                <s-table-header>Price</s-table-header>
-                <s-table-header>Minimum Weight (g)</s-table-header>
-                <s-table-header>Maximum Weight (g)</s-table-header>
-              </s-table-header-row>
-              <s-table-body>
-                {shippingRules.map(( rules ) => (
-                  <s-table-row>
-                    <s-table-cell>{rules.country}</s-table-cell>
-                    <s-table-cell>{rules.currency}</s-table-cell>
-                    <s-table-cell>{rules.price}</s-table-cell>
-                    <s-table-cell>{rules.minWeightGrams}</s-table-cell>
-                    <s-table-cell>{rules.maxWeightGrams}</s-table-cell>
-                  </s-table-row> 
-                ))}
-              </s-table-body>
-            </s-table>
-        </s-paragraph>
+        <s-table>
+          <s-table-header-row>
+            <s-table-header>Country</s-table-header>
+            <s-table-header>Currency</s-table-header>
+            <s-table-header>Price</s-table-header>
+            <s-table-header>Minimum Weight (g)</s-table-header>
+            <s-table-header>Maximum Weight (g)</s-table-header>
+            <s-table-header>Actions</s-table-header>
+          </s-table-header-row>
+          <s-table-body>
+            {shippingRules.map((rule) => (
+              <s-table-row key={rule.id}>
+                <s-table-cell>{rule.country}</s-table-cell>
+                <s-table-cell>{rule.currency}</s-table-cell>
+                <s-table-cell>{(rule.price / 100).toFixed(2)}</s-table-cell>
+                <s-table-cell>{rule.minWeightGrams}</s-table-cell>
+                <s-table-cell>{rule.maxWeightGrams}</s-table-cell>
+                <s-table-cell>
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="delete" />
+                    <input type="hidden" name="id" value={rule.id} />
+                    <button type="submit">Delete</button>
+                  </Form>
+                </s-table-cell>
+              </s-table-row>
+            ))}
+          </s-table-body>
+        </s-table>
       </s-section>
     </s-page>
   )
+}
+
+export const headers: HeadersFunction = (headersArgs) => {
+  return boundary.headers(headersArgs);
+};
+
+function validateRule(formData: FormData) {
+  const formCountry = formData.get("country");
+  const formMinWeightGrams = formData.get("minWeightGrams")
+  const formMaxWeightGrams = formData.get("maxWeightGrams")
+  const formPrice = formData.get("price");
+  const formCurrency = formData.get("currency");
+
+    // CONVERT TO CORRECT TYPES
+  const country = String(formCountry);
+  const price = Math.round(Number(formPrice) * 100);
+  const minWeightGrams = Number(formMinWeightGrams);
+  const maxWeightGrams = Number(formMaxWeightGrams);
+  const currency = String(formCurrency);
+
+  // VALIDATION CHECK
+  const errors: Record<string, string> = {};
+
+  const isValidCountry = COUNTRIES.some((c) => c.code === country);
+  if (!isValidCountry) {
+    errors.country = "Choose a country from the list";
+  }
+
+  if (!formMinWeightGrams || !Number.isInteger(minWeightGrams) || minWeightGrams < 0) {
+    errors.minWeightGrams = "Enter a whole number of grams, 0 or more";
+  }
+
+  if (!formMaxWeightGrams || !Number.isInteger(maxWeightGrams) || maxWeightGrams <= minWeightGrams) {
+    errors.maxWeightGrams = "Enter a whole number of grams, greater than min value";
+  }
+
+  if (!formPrice || !Number.isInteger(price) || price < 0) {
+    errors.price = "Enter a price, 0 or more";
+  }
+
+  if (!formCurrency || !CURRENCIES.includes(currency)) {
+    errors.currency = "Choose a currency from the list";
+  }
+
+  return {
+    errors,
+    data: { country, minWeightGrams, maxWeightGrams, price, currency },
+  };
 }
